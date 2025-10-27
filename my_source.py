@@ -15,8 +15,13 @@ Notes:
 - For AUR packages (if you add any), ensure /tmp has enough space; building happens in a chroot.
 """
 
+import os
+import shutil
+
 import decman
 from decman import File  # Add Directory, Module later if needed
+import decman.config as conf
+import decman.lib as l
 
 # --- Packages ---
 # Pacman packages you want explicitly installed on this system.
@@ -38,6 +43,52 @@ decman.aur_packages += ["decman", "protonvpn"]
 decman.ignored_packages += [
      "yay",
 ]
+
+# --- Optional: Use yay for AUR packages ---
+# If yay is available, offer to use it for AUR installs/upgrades instead of decman's
+# chroot builder. This keeps decman's pacman/file/systemd features intact.
+if shutil.which("yay") and decman.aur_packages:
+  l.print_summary("AUR helper 'yay' detected.")
+  if l.prompt_confirm(
+    "Would you like to install AUR packages using yay instead of decman's builder?",
+    default=True,
+  ):
+    # Disable decman's foreign package manager for this run
+    conf.enable_fpm = False
+
+    # Figure out a non-root user to run yay under (yay refuses root). Prefer SUDO_USER.
+    sudo_user = os.environ.get("SUDO_USER")
+    if not sudo_user:
+      l.print_warning(
+        "SUDO_USER not set; cannot run yay as a regular user. Falling back to decman's builder."
+      )
+      conf.enable_fpm = True
+    else:
+      class YayAurInstaller(decman.Module):
+        """Runs yay to ensure declared AUR packages are installed/upgraded.
+
+        Executed at the end (after_update), so normal pacman steps and file changes
+        complete first. Uses --needed to avoid reinstalling already up-to-date packages.
+        """
+
+        def __init__(self, user: str):
+          super().__init__(name="yay-aur", enabled=True, version="1")
+          self._user = user
+
+        def after_update(self):
+          pkgs = list(decman.aur_packages)
+          if not pkgs:
+            return
+          l.print_summary(
+            "Installing/upgrading AUR packages with yay (skips up-to-date):"
+          )
+          l.print_list("AUR packages:", pkgs)
+          # Run yay as the invoking sudo user to avoid root. Interactive by default.
+          # Users can control yay behavior via their config; we keep it safe and promptful.
+          decman.prg(["yay", "-S", "--needed"] + pkgs, user=self._user)
+
+      # Register the module so it runs in this decman invocation
+      decman.modules.append(YayAurInstaller(sudo_user))
 
 # --- AUR packages ---
 # To let decman manage itself from AUR after it's installed:
