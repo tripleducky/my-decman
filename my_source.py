@@ -28,6 +28,7 @@ decman.packages += [
     "curl",
     # Required for building AUR packages in a clean chroot via devtools
     "devtools",
+    "ly",
 ]
 
 decman.aur_packages += ["decman", "protonvpn"]
@@ -129,6 +130,7 @@ decman.files["/usr/local/bin/decman-guard"] = File(
 # Start them once manually or reboot.
 decman.enabled_systemd_units += [
     "NetworkManager.service",
+    "ly.service",
 ]
 
 # --- Modules ---
